@@ -5,6 +5,7 @@ import (
 	"DatabasePluginVault/storage"
 	"context"
 	"fmt"
+	"github.com/hashicorp/vault/helper/versions"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	"log"
@@ -158,6 +159,12 @@ func (b *databaseBackend) connectionWriteHandler() framework.OperationFunc {
 		old := b.conn.Put(name, engine)
 		if old != nil {
 			old.Close()
+		}
+
+		// 1.12.0 and 1.12.1 stored builtin plugins in storage, but 1.12.2 reverted
+		// that, so clean up any pre-existing stored builtin versions on write.
+		if versions.IsBuiltinVersion(config.PluginVersion) {
+			config.PluginVersion = ""
 		}
 
 		resp := &logical.Response{}

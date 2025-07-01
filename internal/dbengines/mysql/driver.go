@@ -41,6 +41,12 @@ func (d *MySQLDriver) Connect(ctx context.Context) (*sql.DB, error) {
 		log.Print("Failed to open")
 		return nil, fmt.Errorf("mysql open: %w", err)
 	}
+	// enforce an actual connect + auth step
+	if err := db.PingContext(ctx); err != nil {
+		log.Print("Ping failed:", err)
+		db.Close()
+		return nil, fmt.Errorf("mysql ping: %w", err)
+	}
 	db.SetMaxOpenConns(d.cfg.MaxOpenConnections)
 	db.SetMaxIdleConns(d.cfg.MaxIdleConnections)
 	db.SetConnMaxLifetime(d.cfg.MaxConnectionLifetime)

@@ -1,4 +1,4 @@
-package path
+package dbsecretengine
 
 import (
 	"DatabasePluginVault/role"
