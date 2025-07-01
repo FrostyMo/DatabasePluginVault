@@ -1,7 +1,7 @@
 package main
 
 import (
-	azuresecrets "github.com/hashicorp/vault-plugin-secrets-azure"
+	csmdb "DatabasePluginVault"
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/plugin"
 	"log"
@@ -17,7 +17,7 @@ func main() {
 	tlsProviderFunc := api.VaultPluginTLSProvider(tlsConfig)
 
 	err := plugin.ServeMultiplex(&plugin.ServeOpts{
-		BackendFactoryFunc: azuresecrets.Factory,
+		BackendFactoryFunc: csmdb.Factory,
 		// set the TLSProviderFunc so that the plugin maintains backwards
 		// compatibility with Vault versions that don’t support plugin AutoMTLS
 		TLSProviderFunc: tlsProviderFunc,

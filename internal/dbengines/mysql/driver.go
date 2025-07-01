@@ -4,92 +4,58 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"sync"
+	// register the mysql driver
+	_ "github.com/go-sql-driver/mysql"
 )
 
+// MySQLDriver manages the *sql.DB pool.
 type MySQLDriver struct {
-	config        *Config
-	db            *sql.DB
-	connLock      sync.Mutex
-	tlsConfigName string
+	cfg *Config
+	mu  sync.Mutex
+	db  *sql.DB
 }
 
-// NewConnectionProducer creates a driver instance from a raw config map.
-func NewConnectionProducer(raw map[string]interface{}) (*MySQLDriver, error) {
-	cfg, err := Load(raw)
-	if err != nil {
-		return nil, err
-	}
-
-	return &MySQLDriver{
-		config:   cfg,
-		connLock: sync.Mutex{},
-	}, nil
+// NewConnectionProducer builds a driver from a typed Config.
+func NewConnectionProducer(cfg *Config) (*MySQLDriver, error) {
+	return &MySQLDriver{cfg: cfg}, nil
 }
 
-// Connect returns a pooled DB connection (cached if already connected).
-func (m *MySQLDriver) Connect(ctx context.Context) (*sql.DB, error) {
-	m.connLock.Lock()
-	defer m.connLock.Unlock()
-
-	// Reuse connection if healthy
-	if m.db != nil {
-		if err := m.db.PingContext(ctx); err == nil {
-			return m.db, nil
+// Connect returns a cached *sql.DB or opens a new one.
+func (d *MySQLDriver) Connect(ctx context.Context) (*sql.DB, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	log.Print("Inside connect sql")
+	if d.db != nil {
+		log.Print("DB NIl pinging")
+		if err := d.db.PingContext(ctx); err == nil {
+			return d.db, nil
 		}
-		_ = m.db.Close()
-		m.db = nil
+		d.db.Close()
+		d.db = nil
 	}
-
-	dsn := m.config.ConnectionURL
-	db, err := sql.Open("mysql", dsn)
+	log.Print("Opening new connection")
+	db, err := sql.Open("mysql", d.cfg.ConnectionURL)
 	if err != nil {
-		return nil, fmt.Errorf("sql open error: %w", err)
+		log.Print("Failed to open")
+		return nil, fmt.Errorf("mysql open: %w", err)
 	}
-
-	db.SetMaxOpenConns(m.config.MaxOpenConnections)
-	db.SetMaxIdleConns(m.config.MaxIdleConnections)
-	db.SetConnMaxLifetime(m.config.MaxConnectionLifetime)
-
-	m.db = db
+	db.SetMaxOpenConns(d.cfg.MaxOpenConnections)
+	db.SetMaxIdleConns(d.cfg.MaxIdleConnections)
+	db.SetConnMaxLifetime(d.cfg.MaxConnectionLifetime)
+	log.Print(fmt.Sprintf("Received db %v", db))
+	d.db = db
 	return db, nil
 }
 
-// Close closes any open DB connection.
-func (m *MySQLDriver) Close() error {
-	m.connLock.Lock()
-	defer m.connLock.Unlock()
-
-	if m.db != nil {
-		err := m.db.Close()
-		m.db = nil
-		return err
+// Close tears down the DB pool.
+func (d *MySQLDriver) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.db != nil {
+		d.db.Close()
+		d.db = nil
 	}
 	return nil
-}
-
-// NewUser creates a new MySQL user with the provided credentials.
-func (m *MySQLDriver) NewUser(username, password string) error {
-	query := fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", username, password)
-	_, err := m.db.Exec(query)
-	return err
-}
-
-// UpdateUser updates the password of an existing MySQL user.
-func (m *MySQLDriver) UpdateUser(username, password string) error {
-	query := fmt.Sprintf("ALTER USER '%s'@'%%' IDENTIFIED BY '%s'", username, password)
-	_, err := m.db.Exec(query)
-	return err
-}
-
-// DeleteUser removes a user from the MySQL instance.
-func (m *MySQLDriver) DeleteUser(username string) error {
-	query := fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", username)
-	_, err := m.db.Exec(query)
-	return err
-}
-
-// Type returns the database type identifier.
-func (m *MySQLDriver) Type() string {
-	return "mysql"
 }
